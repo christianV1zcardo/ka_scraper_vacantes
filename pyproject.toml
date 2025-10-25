@@ -1,0 +1,18 @@
+[project]
+name = "orem_scraper_vacantes"
+version = "0.1.0"
+description = "Scraper de vacantes laborales"
+authors = [
+    {name = "Orem Analytics",email = "oremcorporation@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pandas (>=2.3.3,<3.0.0)",
+    "selenium (>=4.38.0,<5.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
