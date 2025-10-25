@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 
 import time
 import traceback
+import urllib.parse as _urlparse
 from utils import guardar_resultados
 
 
@@ -21,38 +22,69 @@ class BumeranScraper:
         """
         self.driver = webdriver.Firefox()
 
+
     def abrir_pagina_empleos(self, hoy: bool = False, dias: int = 0) -> None:
         """
         Abre la página de empleos de Bumeran según los filtros de fecha.
         Args:
             hoy: Si True, filtra solo empleos publicados hoy.
-            dias: Si 2 o 3, filtra por empleos publicados en los últimos días.
+            dias: Si 1, 2 o 3, filtra por empleos publicados en los últimos días.
         """
-        
-        # Mejorable y añadible mas condiciones
-        if hoy:
-            self.driver.get("https://www.bumeran.com.pe/empleos-publicacion-hoy.html")
-        elif not hoy:
-            if dias == 2:
-                self.driver.get("https://www.bumeran.com.pe/empleos-publicacion-menor-a-2-dias.html")
-            elif dias == 3:
-                self.driver.get("https://www.bumeran.com.pe/empleos-publicacion-menor-a-3-dias.html")
-            else:
-                self.driver.get("https://www.bumeran.com.pe/empleos-busqueda.html")
+        # Mapeo de URLs por filtro de días
+        if hoy or dias == 1:
+            url = "https://www.bumeran.com.pe/empleos-publicacion-hoy.html"
+        elif dias == 2:
+            url = "https://www.bumeran.com.pe/empleos-publicacion-menor-a-2-dias.html"
+        elif dias == 3:
+            url = "https://www.bumeran.com.pe/empleos-publicacion-menor-a-3-dias.html"
+        else:
+            url = "https://www.bumeran.com.pe/empleos-busqueda.html"
 
-    # Errores aqui
+        print(f"[debug] abrir_pagina_empleos: navegando a {url}")
+        self.driver.get(url)
+        
+    
     def buscar_vacante(self, palabra_clave: str = '') -> None:
         """
         Busca una vacante usando la palabra clave en el buscador de la web.
         Args:
             palabra_clave: Término a buscar en el input principal.
         """
-        # El id del box de texto
-        placeholder_name = "react-select-4-input"
-        elem = self.driver.find_element(By.ID, placeholder_name)
-        elem.send_keys(palabra_clave)
-        elem.send_keys(Keys.RETURN)
-        print(f"[debug] buscar_vacante: enviado '{palabra_clave}' al input y enviado RETURN")
+        # Preferimos construir la URL de búsqueda para preservar filtros (p.ej. 'publicacion-hoy')
+        try:
+            kw = palabra_clave.replace(' ', '-').lower()
+            current = (self.driver.current_url or '')
+            parsed = _urlparse.urlparse(current)
+            path = parsed.path or ''
+
+            # Determinar prefijo según el path actual para no perder filtros
+            if 'publicacion-hoy' in path:
+                prefix = 'empleos-publicacion-hoy-busqueda-'
+            elif 'publicacion-menor-a-2-dias' in path:
+                prefix = 'empleos-publicacion-menor-a-2-dias-busqueda-'
+            elif 'publicacion-menor-a-3-dias' in path:
+                prefix = 'empleos-publicacion-menor-a-3-dias-busqueda-'
+            else:
+                prefix = 'empleos-busqueda-'
+
+            new_path = f"/{prefix}{kw}.html"
+            new_url = f"{parsed.scheme}://{parsed.netloc}{new_path}"
+            print(f"[debug] buscar_vacante: navegando directamente a {new_url}")
+            self.driver.get(new_url)
+            return
+        except Exception as e:
+            # Fallback: intentar enviar la palabra al input (menos fiable)
+            try:
+                placeholder_name = "react-select-4-input"
+                elem = self.driver.find_element(By.ID, placeholder_name)
+                elem.clear()
+                elem.send_keys(palabra_clave)
+                elem.send_keys(Keys.RETURN)
+                print(f"[debug] buscar_vacante fallback: enviado '{palabra_clave}' al input y enviado RETURN")
+                return
+            except Exception as ee:
+                print(f"[error][buscar_vacante] No se pudo realizar la búsqueda: {e} / fallback: {ee}")
+                return
 
 
     def extraer_puestos(self, timeout: int = 10) -> List[Dict[str, Any]]:
@@ -379,22 +411,61 @@ class BumeranScraper:
         """
         """Navega a una página específica de resultados."""
         try:
-            # Construye URL con número de página
-            url_actual = self.driver.current_url
-            if "page=" in url_actual:
-                nueva_url = url_actual.split("page=")[0] + f"page={numero}"
-            else:
-                if "?" in url_actual:
-                    nueva_url = f"{url_actual}&page={numero}"
-                else:
-                    nueva_url = f"{url_actual}?page={numero}"
-
+            # Construye URL con número de página preservando path y otros params
+            url_actual = (self.driver.current_url or "")
+            if not url_actual:
+                return False
+            parsed = _urlparse.urlparse(url_actual)
+            qs = _urlparse.parse_qs(parsed.query)
+            # Normalizamos el parámetro de paginación a 'page'
+            qs['page'] = [str(numero)]
+            new_query = _urlparse.urlencode(qs, doseq=True)
+            nueva_url = _urlparse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
             self.driver.get(nueva_url)
-            time.sleep(1)  # pequeña pausa para carga
+            time.sleep(1)
             return True
         except Exception as e:
             print(f"[error][navegar_a_pagina] Error navegando a página {numero}: {e}")
             return False
+
+
+    def extraer_todos_los_puestos(self, timeout: int = 10, page_wait: float = 1.0) -> List[Dict[str, Any]]:
+        """Recorre todas las páginas de resultados de Bumeran y devuelve puestos deduplicados.
+
+        Estrategia similar a la usada para Computrabajo: iteramos páginas hasta que
+        una página no aporte nuevos resultados o hasta `max_pages` como safeguard.
+        Esto evita depender de selectores de paginación que pueden variar y evita
+        perder filtros al construir URLs de paginación manualmente.
+        """
+        todos: List[Dict[str, Any]] = []
+        seen = set()
+        pagina = 1
+        max_pages = 50
+
+        while pagina <= max_pages:
+            if pagina > 1:
+                ok = self.navegar_a_pagina(pagina)
+                if not ok:
+                    print(f"[debug][bumeran] navegacion fallo en pagina {pagina}, deteniendo")
+                    break
+                time.sleep(page_wait)
+
+            actuales = self.extraer_puestos(timeout=timeout)
+            new_found = 0
+            for p in actuales:
+                url = p.get('url')
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                todos.append(p)
+                new_found += 1
+
+            if new_found == 0:
+                break
+
+            pagina += 1
+
+        return todos
 
 
     def guardar_resultados(self, puestos: List[Dict[str, Any]], query: str):
@@ -412,7 +483,7 @@ if __name__ == "__main__":
     query = 'Analista'  # término de búsqueda
     try:
         # Búsqueda inicial
-        scraper.abrir_pagina_empleos(dias=2)
+        scraper.abrir_pagina_empleos(dias=1)
         scraper.buscar_vacante(query)
         time.sleep(2)  # espera inicial
 

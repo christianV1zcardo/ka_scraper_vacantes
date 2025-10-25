@@ -9,7 +9,7 @@ import json
 import csv
 from datetime import datetime
 
-def guardar_resultados(puestos: List[Dict[str, Any]], query: str, output_dir: str = "output") -> None:
+def guardar_resultados(puestos: List[Dict[str, Any]], query: str, output_dir: str = "output", source: str = "bumeran") -> None:
     """
     Guarda los resultados en formato JSON y CSV en la carpeta output/.
     Args:
@@ -28,7 +28,7 @@ def guardar_resultados(puestos: List[Dict[str, Any]], query: str, output_dir: st
     """
     os.makedirs(output_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d")
-    base_nombre = f"bumeran_{query.lower()}_{timestamp}"
+    base_nombre = f"{source}_{query.lower()}_{timestamp}"
 
     # Guardar JSON
     json_path = os.path.join(output_dir, f"{base_nombre}.json")
