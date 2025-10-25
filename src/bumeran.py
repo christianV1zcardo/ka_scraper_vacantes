@@ -4,14 +4,30 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from typing import List, Dict, Any
+
 import time
 import traceback
+from utils import guardar_resultados
+
 
 class BumeranScraper:
-    def __init__(self):
+    """
+    Scraper de ofertas laborales para Bumeran Perú.
+    Utiliza Selenium para automatizar la navegación y extracción de datos.
+    """
+    def __init__(self) -> None:
+        """
+        Inicializa el webdriver de Selenium (Firefox por defecto).
+        """
         self.driver = webdriver.Firefox()
 
-    def abrir_pagina_empleos(self, hoy: bool = False, dias: int = 0):
+    def abrir_pagina_empleos(self, hoy: bool = False, dias: int = 0) -> None:
+        """
+        Abre la página de empleos de Bumeran según los filtros de fecha.
+        Args:
+            hoy: Si True, filtra solo empleos publicados hoy.
+            dias: Si 2 o 3, filtra por empleos publicados en los últimos días.
+        """
         
         # Mejorable y añadible mas condiciones
         if hoy:
@@ -25,7 +41,12 @@ class BumeranScraper:
                 self.driver.get("https://www.bumeran.com.pe/empleos-busqueda.html")
 
     # Errores aqui
-    def buscar_vacante(self, palabra_clave: str = ''):
+    def buscar_vacante(self, palabra_clave: str = '') -> None:
+        """
+        Busca una vacante usando la palabra clave en el buscador de la web.
+        Args:
+            palabra_clave: Término a buscar en el input principal.
+        """
         # El id del box de texto
         placeholder_name = "react-select-4-input"
         elem = self.driver.find_element(By.ID, placeholder_name)
@@ -35,6 +56,14 @@ class BumeranScraper:
 
 
     def extraer_puestos(self, timeout: int = 10) -> List[Dict[str, Any]]:
+        """
+        Wrapper que intenta extraer puestos usando varias estrategias.
+        Actualmente delega en `extraer_por_enlaces`.
+        Args:
+            timeout: Tiempo máximo de espera para cargar los elementos.
+        Returns:
+            Lista de diccionarios con información de los puestos.
+        """
         """Wrapper que intenta extraer puestos usando varias estrategias.
 
         Actualmente delega en `extraer_por_enlaces`, que es robusta cuando cada oferta
@@ -43,10 +72,18 @@ class BumeranScraper:
         try:
             return self.extraer_por_enlaces(timeout=timeout)
         except Exception as e:
-            print(f"extraer_puestos: fallo usando extraer_por_enlaces: {e}")
+            print(f"[error][extraer_puestos] Fallo usando extraer_por_enlaces: {e}")
             return []
 
     def extraer_por_enlaces(self, timeout: int = 10, max_details: int = 20) -> List[Dict[str, Any]]:
+        """
+        Extrae ofertas buscando anchors dentro del contenedor de resultados.
+        Args:
+            timeout: Tiempo máximo de espera para cargar los elementos.
+            max_details: Máximo de detalles a extraer (no usado actualmente).
+        Returns:
+            Lista de diccionarios con información de los puestos.
+        """
         """Extrae ofertas buscando anchors dentro del contenedor de resultados.
 
         Estrategia:
@@ -64,15 +101,14 @@ class BumeranScraper:
 
         # Debug: si no hay anchors, imprimimos información útil
         if not anchors:
-            print("[debug] no se encontraron anchors dentro del contenedor 'listado-avisos'.")
-            # mostrar algunos hijos directos del contenedor para inspección
+            print("[debug][extraer_por_enlaces] No se encontraron anchors dentro del contenedor 'listado-avisos'.")
             hijos = container.find_elements(By.XPATH, "./*")
-            print(f"[debug] hijos directos del contenedor: {len(hijos)}")
+            print(f"[debug][extraer_por_enlaces] Hijos directos del contenedor: {len(hijos)}")
             for i, h in enumerate(hijos[:10], start=1):
                 tag = h.tag_name
                 classes = h.get_attribute("class")
                 html = (h.get_attribute("outerHTML") or "")[:300]
-                print(f"[debug] hijo {i}: tag={tag} classes={classes} html-snippet={html!r}")
+                print(f"[debug][extraer_por_enlaces] Hijo {i}: tag={tag} classes={classes} html-snippet={html!r}")
 
         seen_hrefs = set()
         details_requested = 0
@@ -109,27 +145,32 @@ class BumeranScraper:
                     })
 
             except Exception as e:
-                # no queremos que un fallo en un anchor detenga todo
-                print(f"error procesando anchor: {e}")
+                print(f"[error][extraer_por_enlaces] Error procesando anchor: {e}")
                 continue
                 
         # Debug resumen si no encontramos puestos
         if not puestos:
-            print(f"[debug] no se extrajeron puestos. Anchors totales en contenedor: {len(anchors)}")
+            print(f"[debug][extraer_por_enlaces] No se extrajeron puestos. Anchors totales en contenedor: {len(anchors)}")
             for i, a in enumerate(anchors[:20], start=1):
                 try:
-                    print(f"[debug anchor {i}] href={a.get_attribute('href')!r} class={a.get_attribute('class')!r} text_snippet={((a.text or '')[:60]).replace('\n',' ')}")
+                    print(f"[debug][anchor {i}] href={a.get_attribute('href')!r} class={a.get_attribute('class')!r} text_snippet={((a.text or '')[:60]).replace('\n',' ')}")
                 except Exception:
                     pass
 
         return puestos
 
 
-    def close(self):
+    def close(self) -> None:
+        """
+        Cierra el navegador y libera recursos del webdriver.
+        """
         self.driver.quit()
 
 
-    def inspeccionar_estructura(self):
+    def inspeccionar_estructura(self) -> None:
+        """
+        Muestra la estructura HTML de la primera card de resultados (debug).
+        """
         """Método temporal para debug: muestra la estructura HTML de la primera card"""
         try:
             # Espera por el contenedor principal
@@ -153,9 +194,12 @@ class BumeranScraper:
                         for elem in elementos:
                             print(f"- {elem.tag_name}: '{elem.text}' (class='{elem.get_attribute('class')}')")
         except Exception as e:
-            print(f"Error inspeccionando estructura: {e}")
+            print(f"[error][inspeccionar_estructura] {e}")
 
-    def debug_containers(self):
+    def debug_containers(self) -> None:
+        """
+        Intenta localizar diferentes selectores de contenedor y lista lo que encuentre (debug).
+        """
         """Intenta localizar diferentes selectores de contenedor y lista lo que encuentre.
 
         Útil cuando no estamos seguros de cuál es el contenedor que envuelve las ofertas.
@@ -178,13 +222,21 @@ class BumeranScraper:
                 pass
 
         if not found:
-            print("[debug] debug_containers: no se encontraron selectores comunes de contenedor.")
+            print("[debug][debug_containers] No se encontraron selectores comunes de contenedor.")
         else:
-            print("[debug] debug_containers: posibles contenedores encontrados:")
+            print("[debug][debug_containers] Posibles contenedores encontrados:")
             for sel, count, tag, classes in found:
                 print(f"  - selector={sel!r} count={count} first_tag={tag} classes={classes}")
 
     def parse_job_detail(self, url: str, timeout: int = 10) -> Dict[str, Any]:
+        """
+        Abre la página de detalle de una oferta y extrae campos relevantes.
+        Args:
+            url: URL de la oferta.
+            timeout: Tiempo máximo de espera para cargar los elementos.
+        Returns:
+            Diccionario con empresa, ubicación, fecha y descripción.
+        """
         """Abre la página de detalle en una pestaña nueva, extrae campos y regresa.
 
         Retorna un dict con keys posibles: empresa, ubicacion, fecha, descripcion.
@@ -248,7 +300,7 @@ class BumeranScraper:
                     pass
 
         except Exception as e:
-            print(f"[debug parse_job_detail] excepción navegando {url}: {e}")
+            print(f"[error][parse_job_detail] Excepción navegando {url}: {e}")
         finally:
             # cerrar la pestaña actual si está abierta y volver a la original
             try:
@@ -271,6 +323,11 @@ class BumeranScraper:
         return result
 
     def obtener_ultima_pagina(self) -> int:
+        """
+        Detecta el número de la última página disponible de resultados.
+        Returns:
+            Número de la última página (int).
+        """
         """Detecta el número de la última página disponible.
         
         Estrategia:
@@ -309,10 +366,17 @@ class BumeranScraper:
             # Si no encontró paginación, asume que solo hay una página
             return 1
         except Exception as e:
-            print(f"[debug] error detectando última página: {e}")
+            print(f"[error][obtener_ultima_pagina] Error detectando última página: {e}")
             return 1
 
     def navegar_a_pagina(self, numero: int) -> bool:
+        """
+        Navega a una página específica de resultados.
+        Args:
+            numero: Número de página a navegar.
+        Returns:
+            True si la navegación fue exitosa, False en caso contrario.
+        """
         """Navega a una página específica de resultados."""
         try:
             # Construye URL con número de página
@@ -329,41 +393,18 @@ class BumeranScraper:
             time.sleep(1)  # pequeña pausa para carga
             return True
         except Exception as e:
-            print(f"[debug] error navegando a página {numero}: {e}")
+            print(f"[error][navegar_a_pagina] Error navegando a página {numero}: {e}")
             return False
 
+
     def guardar_resultados(self, puestos: List[Dict[str, Any]], query: str):
-        """Guarda los resultados en formato JSON y CSV en la carpeta output/.
-        
+        """
+        Guarda los resultados en formato JSON y CSV usando la función utilitaria.
         Args:
             puestos: Lista de diccionarios con los puestos encontrados
             query: Palabra clave usada en la búsqueda (se usa para el nombre del archivo)
         """
-        import json
-        import csv
-        import os
-        from datetime import datetime
-
-        # Crear directorio output si no existe
-        os.makedirs("output", exist_ok=True)
-
-        # Generar nombre base (bumeran_analista_2023-10-25)
-        timestamp = datetime.now().strftime("%Y-%m-%d")
-        base_nombre = f"bumeran_{query.lower()}_{timestamp}"
-
-        # Guardar JSON
-        json_path = os.path.join("output", f"{base_nombre}.json")
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(puestos, f, ensure_ascii=False, indent=2)
-        print(f"\nResultados guardados en JSON: {json_path}")
-
-        # Guardar CSV
-        csv_path = os.path.join("output", f"{base_nombre}.csv")
-        with open(csv_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["titulo", "url"])
-            writer.writeheader()
-            writer.writerows(puestos)
-        print(f"Resultados guardados en CSV: {csv_path}")
+        guardar_resultados(puestos, query)
 
 
 if __name__ == "__main__":
