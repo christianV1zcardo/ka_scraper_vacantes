@@ -1,49 +1,74 @@
 
 # orem_scraper_vacantes
 
-Scraper de vacantes laborales de Bumeran Perú usando Selenium.
+Scraper de vacantes laborales para Bumeran y Computrabajo, con arquitectura modular, pruebas unitarias y salida en CSV/JSON.
 
 ## Requisitos
 
 - Python 3.10+
-- Selenium
-- Firefox (y geckodriver en PATH)
+- Firefox y geckodriver en PATH (para Selenium)
+- Dependencias Python: selenium, pandas
 
-Instala dependencias:
+macOS (Homebrew):
 
 ```bash
-pip install -r requirements.txt
-# o usa poetry si tienes pyproject.toml
+brew install --cask firefox
+brew install geckodriver
 ```
 
-## Uso rápido
+## Instalación
+
+Con pip:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Variables útiles:
+
+- `SCRAPER_HEADLESS=1` ejecuta Firefox en modo headless (sin ventana) si lo deseas.
+
+## Uso
 
 Modo interactivo:
 
 ```bash
-python main.py
+python3 main.py
 ```
 
-Modo por argumentos:
+Modo por argumentos (ejemplos):
 
 ```bash
-python main.py "Analista" --dias 2
+python3 main.py "Analista de datos" --dias 1
+python3 main.py "Analista" --dias 2 --initial-wait 2 --page-wait 1
 ```
 
-Archivos de resultados se guardan en la carpeta `output/` en formato CSV y JSON.
+Salida: los archivos se guardan en `output/` con nombre `<fuente>_<query>_<YYYY-MM-DD>.(json|csv)`.
 
-## Estructura
+## Estructura del proyecto
 
-- `src/bumeran.py`: Lógica principal del scraper.
-- `src/utils.py`: Utilidades para guardado de resultados.
-- `main.py`: CLI para lanzar el scraper.
+- `src/core/`: Infraestructura compartida
+	- `base.py`: Clase base para scrapers (gestión de paginación, cierre)
+	- `browser.py`: Factoría de WebDriver (Firefox) con soporte para `SCRAPER_HEADLESS`
+- `src/bumeran.py`: Scraper de Bumeran (hereda de `BaseScraper`)
+- `src/computrabajo.py`: Scraper de Computrabajo (hereda de `BaseScraper`)
+- `src/pipeline.py`: Orquestación para ejecutar ambos scrapers y combinar resultados
+- `src/utils.py`: Guardado de resultados a JSON/CSV
+- `main.py`: CLI que delega en `pipeline.run_combined`
 
-## Ejemplo de salida
+## Pruebas
 
+El proyecto incluye pruebas unitarias con `unittest`. Durante las pruebas se stubbea Selenium para no requerir el navegador real.
+
+Ejecuta las pruebas:
+
+```bash
+python3 -m unittest discover tests
 ```
-Página 1/2: 20 puestos
-[1] Analista de Datos - https://www.bumeran.com.pe/empleos/analista-datos-123.html
-...
-Resultados guardados en JSON: output/bumeran_analista_2025-10-25.json
-Resultados guardados en CSV: output/bumeran_analista_2025-10-25.csv
-```
+
+## Notas
+
+- Para entornos CI o servidores sin entorno gráfico, define `SCRAPER_HEADLESS=1`.
+- Si necesitas bloquear versiones exactas, genera un lock con tu herramienta preferida (Poetry o pip-tools). Este repo incluye `requirements.txt` para instalaciones simples con pip.

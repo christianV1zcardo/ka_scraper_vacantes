@@ -1,11 +1,27 @@
 """Public package interface for scraper components."""
 
-from .bumeran import BumeranScraper
-from .computrabajo import ComputrabajoScraper
-from .pipeline import run_combined
+from __future__ import annotations
 
-__all__ = [
-	"BumeranScraper",
-	"ComputrabajoScraper",
-	"run_combined",
-]
+from typing import TYPE_CHECKING
+
+__all__ = ["BumeranScraper", "ComputrabajoScraper", "run_combined"]
+
+if TYPE_CHECKING:  # pragma: no cover
+	from .bumeran import BumeranScraper as _BumeranScraper
+	from .computrabajo import ComputrabajoScraper as _ComputrabajoScraper
+	from .pipeline import run_combined as _run_combined
+
+try:
+	from .bumeran import BumeranScraper  # type: ignore[no-redef]
+except ModuleNotFoundError:  # pragma: no cover
+	BumeranScraper = None  # type: ignore[assignment]
+
+try:
+	from .computrabajo import ComputrabajoScraper  # type: ignore[no-redef]
+except ModuleNotFoundError:  # pragma: no cover
+	ComputrabajoScraper = None  # type: ignore[assignment]
+
+try:
+	from .pipeline import run_combined  # type: ignore[no-redef]
+except ModuleNotFoundError:  # pragma: no cover
+	run_combined = None  # type: ignore[assignment]
