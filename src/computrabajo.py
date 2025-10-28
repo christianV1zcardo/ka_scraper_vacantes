@@ -248,7 +248,7 @@ if __name__ == '__main__':
     try:
         # ejemplo: buscar sin filtro (dias=0), o dias=1/3 según necesidad
         s.abrir_pagina_empleos(dias=1)
-        s.buscar_vacante('Analista')
+        s.buscar_vacante('Analista de datos')
         # Recolectar TODOS los puestos en todas las páginas
         resultados = s.extraer_todos_los_puestos(timeout=10, page_wait=1)
         print(f"Total puestos extraídos: {len(resultados)}")

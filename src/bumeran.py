@@ -477,14 +477,14 @@ class BumeranScraper:
         """
         guardar_resultados(puestos, query)
 
-
+ 
 if __name__ == "__main__":
     scraper = BumeranScraper()
-    query = 'Analista'  # término de búsqueda
+    query = 'Analista de datos'  # término de búsqueda
     try:
         # Búsqueda inicial
-        scraper.abrir_pagina_empleos(dias=1)
-        scraper.buscar_vacante(query)
+        scraper.abrir_pagina_empleos(dias=3)
+        scraper.buscar_vacante(query)   
         time.sleep(2)  # espera inicial
 
         # Detecta última página
