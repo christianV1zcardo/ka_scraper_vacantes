@@ -33,7 +33,12 @@ def _save_json(records: List[JobRecord], path: str) -> None:
 
 
 def _save_csv(records: List[JobRecord], path: str) -> None:
-    fieldnames = list(records[0].keys()) if records else ["titulo", "url"]
+    base_fields = ["fuente", "titulo", "url"]
+    if records:
+        dynamic_fields = [key for key in records[0].keys() if key not in base_fields]
+        fieldnames = base_fields + dynamic_fields
+    else:
+        fieldnames = base_fields
     with open(path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

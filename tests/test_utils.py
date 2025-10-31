@@ -44,7 +44,7 @@ class GuardarResultadosTests(unittest.TestCase):
             with open(csv_path, "r", encoding="utf-8") as handle:
                 rows = handle.read().splitlines()
             self.assertEqual(len(rows), 3)
-            self.assertEqual(rows[0], "titulo,url")
+            self.assertEqual(rows[0], "fuente,titulo,url")
 
     def test_guardar_resultados_handles_empty_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -58,7 +58,7 @@ class GuardarResultadosTests(unittest.TestCase):
             with open(csv_path, "r", encoding="utf-8") as handle:
                 rows = handle.read().splitlines()
 
-            self.assertEqual(rows, ["titulo,url"])
+        self.assertEqual(rows, ["fuente,titulo,url"])
 
 
 if __name__ == "__main__":

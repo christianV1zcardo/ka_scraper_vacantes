@@ -4,35 +4,17 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import Dict, List, Set
+from typing import Callable, Dict, Iterable, List, Sequence, Set, Tuple
 
 from .bumeran import BumeranScraper
 from .computrabajo import ComputrabajoScraper
+from .indeed import IndeedScraper
+from .core.base import BaseScraper
 from .utils import guardar_resultados
 
 JobRecord = Dict[str, str]
 
-
-def run_combined(busqueda: str, dias: int, initial_wait: float, page_wait: float) -> None:
-    combined: List[JobRecord] = []
-    seen: Set[str] = set()
-
-    bumeran = BumeranScraper()
-    try:
-        _collect_bumeran(bumeran, busqueda, dias, initial_wait, page_wait, combined, seen)
-    finally:
-        bumeran.close()
-        _cleanup_driver(bumeran)
-
-    computrabajo = ComputrabajoScraper()
-    try:
-        _collect_computrabajo(computrabajo, busqueda, dias, initial_wait, page_wait, combined, seen)
-    finally:
-        computrabajo.close()
-
-    print(f"Guardando {len(combined)} ofertas combinadas para '{busqueda}'...")
-    guardar_resultados(combined, busqueda, output_dir="output", source="combined")
-    print("Guardado completado.")
+DEFAULT_SOURCES: Sequence[str] = ("bumeran", "computrabajo", "indeed")
 
 
 def _collect_bumeran(
@@ -55,7 +37,7 @@ def _collect_bumeran(
             url = puesto.get("url")
             if url and url not in seen:
                 seen.add(url)
-                combined.append(puesto)
+                combined.append({"fuente": "Bumeran", **puesto})
     except Exception as exc:
         print(f"[fatal bumeran] {exc}")
 
@@ -80,12 +62,42 @@ def _collect_computrabajo(
             url = puesto.get("url")
             if url and url not in seen:
                 seen.add(url)
-                combined.append(puesto)
+                combined.append({"fuente": "Computrabajo", **puesto})
     except Exception as exc:
         print(f"[fatal computrabajo] {exc}")
 
 
-def _cleanup_driver(scraper: BumeranScraper) -> None:
+def _collect_indeed(
+    scraper: IndeedScraper,
+    busqueda: str,
+    dias: int,
+    initial_wait: float,
+    page_wait: float,
+    combined: List[JobRecord],
+    seen: Set[str],
+) -> None:
+    try:
+        scraper.abrir_pagina_empleos(dias=dias)
+        scraper.buscar_vacante(busqueda)
+        # Indeed tends to render progressively; use smaller effective waits
+        effective_initial_wait = min(initial_wait, 1.0)
+        effective_page_wait = max(0.1, page_wait * 0.5)
+        print(
+            f"[indeed] Esperando {effective_initial_wait} s (efectivo) y page_wait={effective_page_wait}s entre páginas..."
+        )
+        time.sleep(effective_initial_wait)
+        puestos = scraper.extraer_todos_los_puestos(timeout=4, page_wait=effective_page_wait)
+        print(f"[indeed] páginas recorridas, puestos encontrados: {len(puestos)}")
+        for puesto in puestos:
+            url = puesto.get("url")
+            if url and url not in seen:
+                seen.add(url)
+                combined.append({"fuente": "Indeed", **puesto})
+    except Exception as exc:
+        print(f"[fatal indeed] {exc}")
+
+
+def _cleanup_driver(scraper: BaseScraper) -> None:
     try:
         if hasattr(scraper, "driver") and scraper.driver:
             scraper.driver.quit()
@@ -93,3 +105,67 @@ def _cleanup_driver(scraper: BumeranScraper) -> None:
         pass
     gc.collect()
     time.sleep(1)
+
+
+SCRAPER_REGISTRY: Dict[str, Tuple[Callable[[], BaseScraper], Callable[..., None], bool]] = {
+    "bumeran": (lambda: BumeranScraper(), _collect_bumeran, True),
+    "computrabajo": (lambda: ComputrabajoScraper(), _collect_computrabajo, False),
+    "indeed": (lambda: IndeedScraper(), _collect_indeed, False),
+}
+
+
+def _normalize_sources(sources: Iterable[str] | None) -> List[str]:
+    if not sources:
+        return list(DEFAULT_SOURCES)
+    expanded: List[str] = []
+    for source in sources:
+        normalized = source.lower()
+        if normalized == "all":
+            expanded.extend(DEFAULT_SOURCES)
+        else:
+            expanded.append(normalized)
+    # Preserve order while removing duplicates
+    ordered_unique: List[str] = []
+    seen = set()
+    for item in expanded:
+        if item not in seen:
+            seen.add(item)
+            ordered_unique.append(item)
+    return ordered_unique or list(DEFAULT_SOURCES)
+
+
+def run_combined(
+    busqueda: str,
+    dias: int,
+    initial_wait: float,
+    page_wait: float,
+    sources: Iterable[str] | None = None,
+) -> None:
+    selected_sources = _normalize_sources(sources)
+    combined: List[JobRecord] = []
+    seen: Set[str] = set()
+    executed: List[str] = []
+
+    for source in selected_sources:
+        entry = SCRAPER_REGISTRY.get(source)
+        if not entry:
+            print(f"[warn] Fuente desconocida '{source}', se omite.")
+            continue
+        factory, collector, needs_cleanup = entry
+        scraper = factory()
+        try:
+            collector(scraper, busqueda, dias, initial_wait, page_wait, combined, seen)
+            executed.append(source)
+        finally:
+            scraper.close()
+            if needs_cleanup:
+                _cleanup_driver(scraper)
+
+    if not executed:
+        print("No se ejecutó ningún scraper válido.")
+        return
+
+    label = "combined" if len(executed) > 1 else executed[0]
+    print(f"Guardando {len(combined)} ofertas combinadas para '{busqueda}'...")
+    guardar_resultados(combined, busqueda, output_dir="output", source=label)
+    print("Guardado completado.")

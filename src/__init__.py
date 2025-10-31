@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__all__ = ["BumeranScraper", "ComputrabajoScraper", "run_combined"]
+__all__ = ["BumeranScraper", "ComputrabajoScraper", "IndeedScraper", "run_combined"]
 
 if TYPE_CHECKING:  # pragma: no cover
 	from .bumeran import BumeranScraper as _BumeranScraper
 	from .computrabajo import ComputrabajoScraper as _ComputrabajoScraper
+	from .indeed import IndeedScraper as _IndeedScraper
 	from .pipeline import run_combined as _run_combined
 
 try:
@@ -20,6 +21,11 @@ try:
 	from .computrabajo import ComputrabajoScraper  # type: ignore[no-redef]
 except ModuleNotFoundError:  # pragma: no cover
 	ComputrabajoScraper = None  # type: ignore[assignment]
+
+try:
+	from .indeed import IndeedScraper  # type: ignore[no-redef]
+except ModuleNotFoundError:  # pragma: no cover
+	IndeedScraper = None  # type: ignore[assignment]
 
 try:
 	from .pipeline import run_combined  # type: ignore[no-redef]

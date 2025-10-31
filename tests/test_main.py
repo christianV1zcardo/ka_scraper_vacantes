@@ -24,6 +24,7 @@ class MainModuleTests(unittest.TestCase):
             initial_wait=None,
             page_wait=None,
             interactive=False,
+            source=None,
         )
         params = main.resolve_parameters(args)
         self.assertIsInstance(params, main.RunParameters)
@@ -32,6 +33,7 @@ class MainModuleTests(unittest.TestCase):
         self.assertEqual(params.dias, 2)
         self.assertEqual(params.initial_wait, 2.0)
         self.assertEqual(params.page_wait, 1.0)
+        self.assertEqual(params.sources, list(main.DEFAULT_SOURCES))
 
     def test_resolve_parameters_interactive_uses_prompt(self) -> None:
         interactive_params = main.RunParameters(
@@ -39,6 +41,7 @@ class MainModuleTests(unittest.TestCase):
             dias=1,
             initial_wait=3.0,
             page_wait=1.5,
+            sources=["indeed"],
         )
         args = argparse.Namespace(
             busqueda=None,
@@ -47,6 +50,7 @@ class MainModuleTests(unittest.TestCase):
             initial_wait=None,
             page_wait=None,
             interactive=True,
+            source=None,
         )
         with patch("main.prompt_interactive", return_value=interactive_params) as mock_prompt:
             params = main.resolve_parameters(args)
@@ -55,7 +59,7 @@ class MainModuleTests(unittest.TestCase):
         self.assertEqual(params, interactive_params)
 
     def test_prompt_interactive_validates_input(self) -> None:
-        user_inputs = ["Analista", "5", "2"]
+        user_inputs = ["Analista", "5", "2", ""]
         with patch("builtins.input", side_effect=user_inputs):
             params = main.prompt_interactive()
         self.assertIsInstance(params, main.RunParameters)
@@ -64,6 +68,7 @@ class MainModuleTests(unittest.TestCase):
         self.assertEqual(params.dias, 2)
         self.assertEqual(params.initial_wait, 2.0)
         self.assertEqual(params.page_wait, 1.0)
+        self.assertEqual(params.sources, list(main.DEFAULT_SOURCES))
 
     def test_prompt_interactive_returns_none_on_empty_search(self) -> None:
         with patch("builtins.input", side_effect=["   "]):

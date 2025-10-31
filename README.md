@@ -1,7 +1,7 @@
 
 # orem_scraper_vacantes
 
-Scraper de vacantes laborales para Bumeran y Computrabajo, con arquitectura modular, pruebas unitarias y salida en CSV/JSON.
+Scraper de vacantes laborales para Bumeran, Computrabajo e Indeed, con arquitectura modular, pruebas unitarias y salida en CSV/JSON.
 
 ## Requisitos
 
@@ -38,12 +38,18 @@ Modo interactivo:
 python3 main.py
 ```
 
+El asistente pregunta por la búsqueda, filtro de días y plataformas (Bumeran, Computrabajo, Indeed o `all`).
+
 Modo por argumentos (ejemplos):
 
 ```bash
 python3 main.py "Analista de datos" --dias 1
 python3 main.py "Analista" --dias 2 --initial-wait 2 --page-wait 1
+python3 main.py "Desarrollador" --source indeed
+python3 main.py "Fullstack" --source bumeran --source computrabajo
 ```
+
+- `--source` puede repetirse para elegir plataformas específicas o usar `--source all` para ejecutar todas (valor por defecto).
 
 Salida: los archivos se guardan en `output/` con nombre `<fuente>_<query>_<YYYY-MM-DD>.(json|csv)`.
 
@@ -54,7 +60,8 @@ Salida: los archivos se guardan en `output/` con nombre `<fuente>_<query>_<YYYY-
 	- `browser.py`: Factoría de WebDriver (Firefox) con soporte para `SCRAPER_HEADLESS`
 - `src/bumeran.py`: Scraper de Bumeran (hereda de `BaseScraper`)
 - `src/computrabajo.py`: Scraper de Computrabajo (hereda de `BaseScraper`)
-- `src/pipeline.py`: Orquestación para ejecutar ambos scrapers y combinar resultados
+- `src/indeed.py`: Scraper de Indeed (hereda de `BaseScraper`)
+- `src/pipeline.py`: Orquestación para ejecutar los scrapers y combinar resultados
 - `src/utils.py`: Guardado de resultados a JSON/CSV
 - `main.py`: CLI que delega en `pipeline.run_combined`
 
