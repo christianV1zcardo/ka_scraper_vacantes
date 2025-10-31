@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import gc
+import logging
 import time
-from typing import Callable, Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .bumeran import BumeranScraper
 from .computrabajo import ComputrabajoScraper
@@ -13,6 +14,8 @@ from .core.base import BaseScraper
 from .utils import guardar_resultados
 
 JobRecord = Dict[str, str]
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCES: Sequence[str] = ("bumeran", "computrabajo", "indeed")
 
@@ -23,23 +26,25 @@ def _collect_bumeran(
     dias: int,
     initial_wait: float,
     page_wait: float,
-    combined: List[JobRecord],
-    seen: Set[str],
-) -> None:
+) -> List[JobRecord]:
+    results: List[JobRecord] = []
+    seen: Set[str] = set()
     try:
         scraper.abrir_pagina_empleos(hoy=dias == 1, dias=dias if dias in (2, 3) else 0)
         scraper.buscar_vacante(busqueda)
-        print(f"[bumeran] Esperando {initial_wait} segundos para que cargue la página...")
+        logger.info("[bumeran] Esperando %.1f s para carga inicial", initial_wait)
         time.sleep(initial_wait)
         puestos = scraper.extraer_todos_los_puestos(timeout=10, page_wait=page_wait)
-        print(f"[bumeran] puestos extraídos en total: {len(puestos)}")
+        logger.info("[bumeran] puestos extraídos: %d", len(puestos))
         for puesto in puestos:
             url = puesto.get("url")
-            if url and url not in seen:
-                seen.add(url)
-                combined.append({"fuente": "Bumeran", **puesto})
-    except Exception as exc:
-        print(f"[fatal bumeran] {exc}")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            results.append({"fuente": "Bumeran", **puesto})
+    except Exception:
+        logger.exception("[bumeran] Error durante la recolección")
+    return results
 
 
 def _collect_computrabajo(
@@ -48,23 +53,25 @@ def _collect_computrabajo(
     dias: int,
     initial_wait: float,
     page_wait: float,
-    combined: List[JobRecord],
-    seen: Set[str],
-) -> None:
+) -> List[JobRecord]:
+    results: List[JobRecord] = []
+    seen: Set[str] = set()
     try:
         scraper.abrir_pagina_empleos(dias=dias)
         scraper.buscar_vacante(busqueda)
-        print(f"[computrabajo] Esperando {initial_wait} segundos para que cargue la página...")
+        logger.info("[computrabajo] Esperando %.1f s para carga inicial", initial_wait)
         time.sleep(initial_wait)
         puestos = scraper.extraer_todos_los_puestos(timeout=10, page_wait=page_wait)
-        print(f"[computrabajo] páginas recorridas, puestos encontrados: {len(puestos)}")
+        logger.info("[computrabajo] puestos extraídos: %d", len(puestos))
         for puesto in puestos:
             url = puesto.get("url")
-            if url and url not in seen:
-                seen.add(url)
-                combined.append({"fuente": "Computrabajo", **puesto})
-    except Exception as exc:
-        print(f"[fatal computrabajo] {exc}")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            results.append({"fuente": "Computrabajo", **puesto})
+    except Exception:
+        logger.exception("[computrabajo] Error durante la recolección")
+    return results
 
 
 def _collect_indeed(
@@ -73,44 +80,50 @@ def _collect_indeed(
     dias: int,
     initial_wait: float,
     page_wait: float,
-    combined: List[JobRecord],
-    seen: Set[str],
-) -> None:
+) -> List[JobRecord]:
+    results: List[JobRecord] = []
+    seen: Set[str] = set()
     try:
         scraper.abrir_pagina_empleos(dias=dias)
         scraper.buscar_vacante(busqueda)
-        # Indeed tends to render progressively; use smaller effective waits
         effective_initial_wait = min(initial_wait, 1.0)
         effective_page_wait = max(0.1, page_wait * 0.5)
-        print(
-            f"[indeed] Esperando {effective_initial_wait} s (efectivo) y page_wait={effective_page_wait}s entre páginas..."
+        logger.info(
+            "[indeed] Esperando %.1f s inicial, page_wait=%.2f s", effective_initial_wait, effective_page_wait
         )
         time.sleep(effective_initial_wait)
         puestos = scraper.extraer_todos_los_puestos(timeout=4, page_wait=effective_page_wait)
-        print(f"[indeed] páginas recorridas, puestos encontrados: {len(puestos)}")
+        logger.info("[indeed] puestos extraídos: %d", len(puestos))
         for puesto in puestos:
             url = puesto.get("url")
-            if url and url not in seen:
-                seen.add(url)
-                combined.append({"fuente": "Indeed", **puesto})
-    except Exception as exc:
-        print(f"[fatal indeed] {exc}")
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            results.append({"fuente": "Indeed", **puesto})
+    except Exception:
+        logger.exception("[indeed] Error durante la recolección")
+    return results
 
 
-def _cleanup_driver(scraper: BaseScraper) -> None:
+def _cleanup_driver(scraper: BaseScraper, label: str | None = None) -> None:
+    source_label = label or scraper.__class__.__name__
+    logger.debug("Liberando recursos adicionales para '%s'", source_label)
     try:
         if hasattr(scraper, "driver") and scraper.driver:
             scraper.driver.quit()
     except Exception:
-        pass
+        logger.exception("Fallo al cerrar driver para '%s'", source_label)
     gc.collect()
     time.sleep(1)
 
 
-SCRAPER_REGISTRY: Dict[str, Tuple[Callable[[], BaseScraper], Callable[..., None], bool]] = {
-    "bumeran": (lambda: BumeranScraper(), _collect_bumeran, True),
-    "computrabajo": (lambda: ComputrabajoScraper(), _collect_computrabajo, False),
-    "indeed": (lambda: IndeedScraper(), _collect_indeed, False),
+CollectorFn = Callable[[Any, str, int, float, float], List[JobRecord]]
+
+
+SCRAPER_REGISTRY: Dict[str, Tuple[Callable[..., BaseScraper], CollectorFn, bool]] = {
+    "bumeran": (lambda headless=None: BumeranScraper(headless=headless), _collect_bumeran, True),
+    "computrabajo": (lambda headless=None: ComputrabajoScraper(headless=headless), _collect_computrabajo, False),
+    "indeed": (lambda headless=None: IndeedScraper(headless=headless), _collect_indeed, False),
 }
 
 
@@ -140,32 +153,82 @@ def run_combined(
     initial_wait: float,
     page_wait: float,
     sources: Iterable[str] | None = None,
-) -> None:
+    headless: Optional[bool] = None,
+) -> List[JobRecord]:
+    combined, executed = collect_jobs(
+        busqueda=busqueda,
+        dias=dias,
+        initial_wait=initial_wait,
+        page_wait=page_wait,
+        sources=sources,
+        headless=headless,
+    )
+    if not executed:
+        logger.warning("No se ejecutó ningún scraper válido.")
+        return []
+
+    label = "combined" if len(executed) > 1 else executed[0]
+    logger.info("Guardando %d ofertas para '%s' con etiqueta '%s'", len(combined), busqueda, label)
+    guardar_resultados(combined, busqueda, output_dir="output", source=label)
+    logger.info("Guardado completado.")
+    return combined
+
+
+def collect_jobs(
+    busqueda: str,
+    dias: int,
+    initial_wait: float,
+    page_wait: float,
+    sources: Iterable[str] | None = None,
+    headless: Optional[bool] = None,
+) -> Tuple[List[JobRecord], List[str]]:
     selected_sources = _normalize_sources(sources)
     combined: List[JobRecord] = []
-    seen: Set[str] = set()
     executed: List[str] = []
+    seen_urls: Set[str] = set()
 
     for source in selected_sources:
         entry = SCRAPER_REGISTRY.get(source)
         if not entry:
-            print(f"[warn] Fuente desconocida '{source}', se omite.")
+            logger.warning("Fuente desconocida '%s', se omite.", source)
             continue
+
         factory, collector, needs_cleanup = entry
-        scraper = factory()
+        scraper = factory(headless=headless)
+        logger.info("Iniciando scraper '%s'", source)
+        start_time = time.perf_counter()
+        results: List[JobRecord] = []
         try:
-            collector(scraper, busqueda, dias, initial_wait, page_wait, combined, seen)
-            executed.append(source)
+            results = collector(scraper, busqueda, dias, initial_wait, page_wait)
+        except Exception:
+            logger.exception("Error no controlado ejecutando scraper '%s'", source)
         finally:
-            scraper.close()
+            try:
+                scraper.close()
+            except Exception:
+                logger.exception("Error cerrando scraper '%s'", source)
             if needs_cleanup:
-                _cleanup_driver(scraper)
+                _cleanup_driver(scraper, source)
 
-    if not executed:
-        print("No se ejecutó ningún scraper válido.")
-        return
+        elapsed = time.perf_counter() - start_time
+        logger.info("Scraper '%s' finalizado en %.2fs con %d ofertas", source, elapsed, len(results))
 
-    label = "combined" if len(executed) > 1 else executed[0]
-    print(f"Guardando {len(combined)} ofertas combinadas para '{busqueda}'...")
-    guardar_resultados(combined, busqueda, output_dir="output", source=label)
-    print("Guardado completado.")
+        if not results:
+            logger.info("Scraper '%s' no produjo resultados.", source)
+            continue
+
+        executed.append(source)
+        for job in results:
+            url = job.get("url")
+            if not url:
+                logger.debug("Registro sin URL descartado de '%s'", source)
+                continue
+            if url in seen_urls:
+                logger.debug("URL duplicada '%s' descartada (fuente '%s')", url, source)
+                continue
+            seen_urls.add(url)
+            combined.append(job)
+
+    logger.info("Total ofertas combinadas tras deduplicación: %d", len(combined))
+
+    return combined, executed

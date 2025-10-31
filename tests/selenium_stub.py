@@ -46,6 +46,7 @@ def ensure_selenium_stub() -> None:
         ID = "id"
         CSS_SELECTOR = "css selector"
         TAG_NAME = "tag name"
+        XPATH = "xpath"
 
     by_module.By = DummyBy  # type: ignore[attr-defined]
 

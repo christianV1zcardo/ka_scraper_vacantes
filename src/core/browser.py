@@ -12,9 +12,9 @@ from selenium.webdriver.firefox.options import Options
 def create_firefox_driver(headless: Optional[bool] = None) -> webdriver.Firefox:
     """Create a Firefox WebDriver instance.
 
-    The headless mode can be toggled via the ``headless`` argument or the
-    ``SCRAPER_HEADLESS`` environment variable. Defaults to standard mode
-    to preserve current behaviour.
+    Headless mode is enabled by default. You can toggle it via the ``headless``
+    argument or the ``SCRAPER_HEADLESS`` environment variable (set to ``0`` or
+    ``false`` to disable).
     """
     options = Options()
     resolved_headless = headless
@@ -22,6 +22,8 @@ def create_firefox_driver(headless: Optional[bool] = None) -> webdriver.Firefox:
         env_value = os.getenv("SCRAPER_HEADLESS")
         if env_value is not None:
             resolved_headless = env_value not in {"0", "false", "False"}
+    if resolved_headless is None:
+        resolved_headless = True
     if resolved_headless:
         options.add_argument("-headless")
     return webdriver.Firefox(options=options)

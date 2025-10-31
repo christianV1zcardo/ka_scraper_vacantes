@@ -26,7 +26,7 @@ class BrowserFactoryTests(unittest.TestCase):
             options_instance = mock_options.return_value
             create_firefox_driver()
             mock_firefox.assert_called_once_with(options=options_instance)
-            options_instance.add_argument.assert_not_called()
+            options_instance.add_argument.assert_called_once_with("-headless")
 
     def test_env_headless_flag_enables_headless_argument(self) -> None:
         with patch.object(browser_module, "Options") as mock_options, patch.object(
@@ -38,6 +38,16 @@ class BrowserFactoryTests(unittest.TestCase):
         options_instance.add_argument.assert_called_once_with("-headless")
         mock_firefox.assert_called_once()
 
+    def test_env_headless_zero_disables_headless_argument(self) -> None:
+        with patch.object(browser_module, "Options") as mock_options, patch.object(
+            browser_module.webdriver, "Firefox"
+        ) as mock_firefox:
+            options_instance = mock_options.return_value
+            with patch.dict(os.environ, {"SCRAPER_HEADLESS": "0"}, clear=True):
+                create_firefox_driver()
+        options_instance.add_argument.assert_not_called()
+        mock_firefox.assert_called_once()
+
     def test_explicit_headless_true_overrides_env(self) -> None:
         with patch.object(browser_module, "Options") as mock_options, patch.object(
             browser_module.webdriver, "Firefox"
@@ -46,6 +56,15 @@ class BrowserFactoryTests(unittest.TestCase):
             with patch.dict(os.environ, {"SCRAPER_HEADLESS": "0"}, clear=True):
                 create_firefox_driver(headless=True)
         options_instance.add_argument.assert_called_once_with("-headless")
+        mock_firefox.assert_called_once()
+
+    def test_explicit_headless_false_skips_argument(self) -> None:
+        with patch.object(browser_module, "Options") as mock_options, patch.object(
+            browser_module.webdriver, "Firefox"
+        ) as mock_firefox:
+            options_instance = mock_options.return_value
+            create_firefox_driver(headless=False)
+        options_instance.add_argument.assert_not_called()
         mock_firefox.assert_called_once()
 
 

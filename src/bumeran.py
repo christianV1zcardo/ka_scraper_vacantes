@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 import urllib.parse as urlparse
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -19,8 +19,8 @@ JobData = Dict[str, Any]
 class BumeranScraper(BaseScraper):
     """Scraper de ofertas laborales para Bumeran Perú."""
 
-    def __init__(self, driver=None) -> None:
-        super().__init__(driver=driver)
+    def __init__(self, driver=None, headless: Optional[bool] = True) -> None:
+        super().__init__(driver=driver, headless=headless)
 
     def abrir_pagina_empleos(self, hoy: bool = False, dias: int = 0) -> None:
         url = self._build_listing_url(hoy=hoy, dias=dias)
@@ -114,7 +114,8 @@ class BumeranScraper(BaseScraper):
                 title = self._extract_title(anchor)
                 if not title:
                     continue
-                payloads.append({"titulo": title, "url": href})
+                company = self._extract_company(anchor)
+                payloads.append({"titulo": title, "url": href, "empresa": company})
                 seen.add(href)
             except Exception:
                 continue
@@ -128,3 +129,51 @@ class BumeranScraper(BaseScraper):
                 if text:
                     return text
         return (anchor.text or "").split("\n")[0].strip()
+
+    def _extract_company(self, anchor) -> str:
+        """Extract company name from Bumeran card.
+
+        Based on provided markup, company appears as an H3 under a span wrapper
+        (e.g., <h3 class="sc-igZVbQ ...">FINANCIERA ADES</h3>) or
+        <h3 class="sc-ebDnpS ...">Lindcorp</h3>.
+        We avoid picking 'Publicado ...' or the job title itself.
+        """
+        # Try specific likely patterns first
+        specific_selectors = [
+            "span.sc-Ehqfj h3",
+            "h3.sc-igZVbQ",
+            "h3.sc-ebDnpS",
+        ]
+
+        def _clean(txt: str) -> str:
+            return (txt or "").strip().split("\n")[0]
+
+        # Obtain the job title text to avoid confusing it with company
+        title_elems = anchor.find_elements(By.CSS_SELECTOR, "h2")
+        title_text = _clean(title_elems[0].text) if title_elems else ""
+
+        # Filters to exclude non-company h3s
+        def _is_company_candidate(txt: str) -> bool:
+            if not txt:
+                return False
+            low = txt.lower()
+            if low.startswith("publicado") or low.startswith("hace "):
+                return False
+            if title_text and txt == title_text:
+                return False
+            return True
+
+        for sel in specific_selectors:
+            elems = anchor.find_elements(By.CSS_SELECTOR, sel)
+            for el in elems:
+                txt = _clean(el.text)
+                if _is_company_candidate(txt):
+                    return txt
+
+        # Generic fallback: any h3 inside the anchor that passes filters
+        for el in anchor.find_elements(By.CSS_SELECTOR, "h3"):
+            txt = _clean(el.text)
+            if _is_company_candidate(txt):
+                return txt
+
+        return ""

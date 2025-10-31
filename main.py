@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ class RunParameters:
     initial_wait: float
     page_wait: float
     sources: List[str]
+    log_level: int = logging.INFO
+    headless: Optional[bool] = None
 
 
 def prompt_interactive() -> Optional[RunParameters]:
@@ -40,6 +43,8 @@ def prompt_interactive() -> Optional[RunParameters]:
                 initial_wait=2.0,
                 page_wait=1.0,
                 sources=sources,
+                log_level=logging.INFO,
+                headless=None,
             )
         print("Opción inválida. Ingresa 0, 1, 2 o 3.")
 
@@ -70,6 +75,25 @@ def parse_arguments() -> argparse.Namespace:
         choices=["bumeran", "computrabajo", "indeed", "all"],
         help="Selecciona plataformas a ejecutar (usa varias veces para múltiples)",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error", "critical"],
+        default="info",
+        help="Nivel de logging a utilizar",
+    )
+    parser.add_argument(
+        "--headless",
+        dest="headless",
+        action="store_true",
+        help="Forzar modo headless (habilitado por defecto)",
+    )
+    parser.add_argument(
+        "--no-headless",
+        dest="headless",
+        action="store_false",
+        help="Deshabilitar headless para depuración local",
+    )
+    parser.set_defaults(headless=None)
     return parser.parse_args()
 
 
@@ -82,6 +106,8 @@ def resolve_parameters(args: argparse.Namespace) -> Optional[RunParameters]:
         initial_wait=args.initial_wait if args.initial_wait is not None else 2.0,
         page_wait=args.page_wait if args.page_wait is not None else 1.0,
         sources=normalize_sources(args.source),
+        log_level=parse_log_level(args.log_level),
+        headless=args.headless,
     )
 
 
@@ -105,6 +131,24 @@ def parse_sources_input(raw_input: str) -> List[str]:
     return normalize_sources(tokens)
 
 
+def parse_log_level(value: Optional[str]) -> int:
+    if not value:
+        return logging.INFO
+    level = getattr(logging, value.upper(), logging.INFO)
+    if isinstance(level, int):
+        return level
+    return logging.INFO
+
+
+def configure_logging(level: int) -> None:
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    # Reduce el ruido de bibliotecas verbosas como Selenium
+    logging.getLogger("selenium").setLevel(max(logging.WARNING, level))
+
+
 def _dedupe_preserving_order(values: List[str]) -> List[str]:
     ordered: List[str] = []
     seen = set()
@@ -120,12 +164,14 @@ def main() -> None:
     params = resolve_parameters(args)
     if not params:
         return
+    configure_logging(params.log_level)
     run_combined(
         busqueda=params.busqueda,
         dias=params.dias,
         initial_wait=params.initial_wait,
         page_wait=params.page_wait,
         sources=params.sources,
+        headless=params.headless,
     )
 
 

@@ -25,6 +25,8 @@ class MainModuleTests(unittest.TestCase):
             page_wait=None,
             interactive=False,
             source=None,
+            log_level="info",
+            headless=None,
         )
         params = main.resolve_parameters(args)
         self.assertIsInstance(params, main.RunParameters)
@@ -34,6 +36,7 @@ class MainModuleTests(unittest.TestCase):
         self.assertEqual(params.initial_wait, 2.0)
         self.assertEqual(params.page_wait, 1.0)
         self.assertEqual(params.sources, list(main.DEFAULT_SOURCES))
+        self.assertIsNone(params.headless)
 
     def test_resolve_parameters_interactive_uses_prompt(self) -> None:
         interactive_params = main.RunParameters(
@@ -42,6 +45,7 @@ class MainModuleTests(unittest.TestCase):
             initial_wait=3.0,
             page_wait=1.5,
             sources=["indeed"],
+            headless=None,
         )
         args = argparse.Namespace(
             busqueda=None,
@@ -51,6 +55,8 @@ class MainModuleTests(unittest.TestCase):
             page_wait=None,
             interactive=True,
             source=None,
+            log_level="info",
+            headless=None,
         )
         with patch("main.prompt_interactive", return_value=interactive_params) as mock_prompt:
             params = main.resolve_parameters(args)
@@ -69,6 +75,7 @@ class MainModuleTests(unittest.TestCase):
         self.assertEqual(params.initial_wait, 2.0)
         self.assertEqual(params.page_wait, 1.0)
         self.assertEqual(params.sources, list(main.DEFAULT_SOURCES))
+        self.assertIsNone(params.headless)
 
     def test_prompt_interactive_returns_none_on_empty_search(self) -> None:
         with patch("builtins.input", side_effect=["   "]):

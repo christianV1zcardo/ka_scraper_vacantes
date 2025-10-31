@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, Iterable, List
 
 JobRecord = Dict[str, Any]
+
+logger = logging.getLogger(__name__)
 
 
 def guardar_resultados(
@@ -22,18 +25,22 @@ def guardar_resultados(
     base_name = f"{source}_{query.lower()}_{timestamp}"
 
     records = list(puestos)
-    _save_json(records, os.path.join(output_dir, f"{base_name}.json"))
-    _save_csv(records, os.path.join(output_dir, f"{base_name}.csv"))
+    json_path = os.path.join(output_dir, f"{base_name}.json")
+    csv_path = os.path.join(output_dir, f"{base_name}.csv")
+    _save_json(records, json_path)
+    _save_csv(records, csv_path)
+    logger.info("Resultados persistidos en %s y %s", json_path, csv_path)
 
 
 def _save_json(records: List[JobRecord], path: str) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(records, handle, ensure_ascii=False, indent=2)
-    print(f"\nResultados guardados en JSON: {path}")
+    logger.info("Resultados guardados en JSON: %s", path)
 
 
 def _save_csv(records: List[JobRecord], path: str) -> None:
-    base_fields = ["fuente", "titulo", "url"]
+    # Ensure fixed base order with the new Empresa column between fuente and titulo
+    base_fields = ["fuente", "empresa", "titulo", "url"]
     if records:
         dynamic_fields = [key for key in records[0].keys() if key not in base_fields]
         fieldnames = base_fields + dynamic_fields
@@ -43,4 +50,4 @@ def _save_csv(records: List[JobRecord], path: str) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(records)
-    print(f"Resultados guardados en CSV: {path}")
+    logger.info("Resultados guardados en CSV: %s", path)

@@ -19,8 +19,8 @@ class IndeedScraper(BaseScraper):
     SEARCH_PATH = "/jobs"
     EXPECTED_PAGE_SIZE = 15  # Indeed typically shows 15 cards per page
 
-    def __init__(self, driver=None) -> None:
-        super().__init__(driver=driver)
+    def __init__(self, driver=None, headless: Optional[bool] = True) -> None:
+        super().__init__(driver=driver, headless=headless)
         self._search_params: Dict[str, str] = {}
         self._fromage: Optional[int] = None
         self._last_page_url: Optional[str] = None
@@ -65,7 +65,8 @@ class IndeedScraper(BaseScraper):
             title = self._extract_title(anchor, card)
             if not title:
                 continue
-            results.append({"titulo": title, "url": url})
+            company = self._extract_company(card)
+            results.append({"titulo": title, "url": url, "empresa": company})
         return results
 
     def extraer_todos_los_puestos(self, timeout: int = 1, page_wait: float = 0.1) -> List[JobData]:
@@ -132,6 +133,21 @@ class IndeedScraper(BaseScraper):
         text = anchor.text.strip()
         if text:
             return text.split("\n")[0]
+        return ""
+
+    def _extract_company(self, card) -> str:
+        # Indeed typically shows company name in span.companyName
+        for selector in (
+            "span.companyName",
+            "a.companyName",
+            "div.companyName",
+            "[data-testid='company-name']",
+        ):
+            elems = card.find_elements(By.CSS_SELECTOR, selector)
+            if elems:
+                text = elems[0].text.strip()
+                if text:
+                    return text.split("\n")[0]
         return ""
 
     def _map_dias_to_fromage(self, dias: int) -> Optional[int]:

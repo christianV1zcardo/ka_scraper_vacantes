@@ -17,8 +17,12 @@ class BaseScraper:
 
     max_pages: int = 50
 
-    def __init__(self, driver: Optional[WebDriver] = None) -> None:
-        self.driver: WebDriver = driver or create_firefox_driver()
+    def __init__(
+        self,
+        driver: Optional[WebDriver] = None,
+        headless: Optional[bool] = True,
+    ) -> None:
+        self.driver: WebDriver = driver or create_firefox_driver(headless=headless)
 
     def close(self) -> None:
         """Terminate the underlying browser session."""

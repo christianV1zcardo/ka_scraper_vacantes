@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -19,10 +19,11 @@ class ComputrabajoScraper(BaseScraper):
     BASE_URL = "https://www.computrabajo.com.pe/"
     SITE_ROOT = "https://pe.computrabajo.com"
 
-    def __init__(self, driver=None) -> None:
-        super().__init__(driver=driver)
+    def __init__(self, driver=None, headless: Optional[bool] = True) -> None:
+        super().__init__(driver=driver, headless=headless)
         self.pubdate = 0
         self.last_keyword = ""
+        self._last_page_url: str = ""
 
     def abrir_pagina_empleos(self, hoy: bool = False, dias: int = 0) -> None:
         if dias == 1:
@@ -32,6 +33,7 @@ class ComputrabajoScraper(BaseScraper):
         else:
             self.pubdate = 0
         self.driver.get(self.BASE_URL)
+        self._last_page_url = getattr(self.driver, "current_url", self.BASE_URL)
 
     def buscar_vacante(self, palabra_clave: str = "") -> None:
         keyword = palabra_clave.replace(" ", "-").lower()
@@ -41,15 +43,19 @@ class ComputrabajoScraper(BaseScraper):
         try:
             self.driver.get(url)
             self.last_keyword = palabra_clave
+            self._last_page_url = getattr(self.driver, "current_url", url)
         except Exception:
             pass
 
     def extraer_puestos(self, timeout: int = 10) -> List[JobData]:
-        wait = WebDriverWait(self.driver, timeout)
+        primary_wait = WebDriverWait(self.driver, min(timeout, 3))
         try:
-            container = wait.until(EC.presence_of_element_located((By.ID, "offersGridOfferContainer")))
+            container = primary_wait.until(
+                EC.presence_of_element_located((By.ID, "offersGridOfferContainer"))
+            )
         except Exception:
-            container = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "main")))
+            fallback_wait = WebDriverWait(self.driver, min(timeout, 3))
+            container = fallback_wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "main")))
         anchors = container.find_elements(By.CSS_SELECTOR, "article a.js-o-link.fc_base")
         base_url = self._build_base_search_url()
         payloads: List[JobData] = []
@@ -62,7 +68,9 @@ class ComputrabajoScraper(BaseScraper):
             detail_url = self._build_detail_url(href, base_url)
             if not detail_url or detail_url in seen:
                 continue
-            payloads.append({"titulo": text.split("\n")[0], "url": detail_url})
+            title_text = text.split("\n")[0]
+            company = self._extract_company(anchor, title_text)
+            payloads.append({"titulo": title_text, "url": detail_url, "empresa": company})
             seen.add(detail_url)
         return payloads
 
@@ -81,8 +89,15 @@ class ComputrabajoScraper(BaseScraper):
             else:
                 separator = "&" if "?" in current else "?"
                 target = f"{current}{separator}p={numero}"
+            if self._last_page_url and target == self._last_page_url:
+                return False
             self.driver.get(target)
-            time.sleep(1)
+            new_url = getattr(self.driver, "current_url", target)
+            # Si la URL no cambia, asumimos que no hay más páginas
+            if self._last_page_url and new_url == self._last_page_url:
+                return False
+            self._last_page_url = new_url
+            time.sleep(0.2)
             return True
         except Exception:
             return False
@@ -108,3 +123,36 @@ class ComputrabajoScraper(BaseScraper):
         if href.startswith("/"):
             return f"{self.SITE_ROOT}{href}"
         return href
+
+    def _extract_company(self, anchor, title_text: str) -> str:
+        # In Computrabajo, the company name is usually within the same article card.
+        try:
+            card = anchor.find_element(By.XPATH, "ancestor::article[1]")
+        except Exception:
+            card = None
+
+        selectors = [
+            "span.fs16.fc_base.mt5.fc_base.fc_base",
+            "span.fs13.fc_aux.tx_ellipsis",
+            "a.fc_base",
+            "span[class*='fc_aux']",
+        ]
+
+        search_roots = [anchor]
+        if card:
+            search_roots.insert(0, card)
+
+        for root in search_roots:
+            for sel in selectors:
+                elems = root.find_elements(By.CSS_SELECTOR, sel)
+                for e in elems:
+                    txt = e.text.strip()
+                    if not txt:
+                        continue
+                    # Evita confundir el título con la empresa y textos relativos al tiempo
+                    if txt == title_text:
+                        continue
+                    if txt.lower().startswith("hace "):
+                        continue
+                    return txt.split("\n")[0]
+        return ""

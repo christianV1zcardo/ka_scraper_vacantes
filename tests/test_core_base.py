@@ -68,6 +68,29 @@ class BaseScraperTests(unittest.TestCase):
 
         self.assertEqual(results, [{"url": "u1", "titulo": "Job 1"}])
 
+    def test_gather_paginated_respects_navigator_abort(self) -> None:
+        scraper = DummyScraper()
+        pages = [
+            [{"url": "u1", "titulo": "Job 1"}],
+            [{"url": "u2", "titulo": "Job 2"}],
+        ]
+        call_index = {"value": 0}
+        visited_pages = []
+
+        def extractor():
+            index = min(call_index["value"], len(pages) - 1)
+            call_index["value"] += 1
+            return pages[index]
+
+        def navigator(page: int) -> bool:
+            visited_pages.append(page)
+            return False
+
+        results = scraper.gather_paginated(extractor=extractor, navigator=navigator, page_wait=0)
+
+        self.assertEqual(results, [{"url": "u1", "titulo": "Job 1"}])
+        self.assertEqual(visited_pages, [2])
+
 
 if __name__ == "__main__":
     unittest.main()
