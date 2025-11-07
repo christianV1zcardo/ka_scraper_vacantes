@@ -9,10 +9,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pandas (>=2.3.3,<3.0.0)",
-    "selenium (>=4.38.0,<5.0.0)"
+    "selenium (>=4.38.0,<5.0.0)",
+    "sel (>=0.2.2,<0.3.0)",
+    "pytest (>=8.4.2,<9.0.0)"
 ]
 
 
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest (>=8.4.2,<9.0.0)"
+]

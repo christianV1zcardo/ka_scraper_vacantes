@@ -12,6 +12,7 @@ from .computrabajo import ComputrabajoScraper
 from .indeed import IndeedScraper
 from .core.base import BaseScraper
 from .utils import guardar_resultados
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 JobRecord = Dict[str, str]
 
@@ -180,21 +181,25 @@ def collect_jobs(
     initial_wait: float,
     page_wait: float,
     sources: Iterable[str] | None = None,
-    headless: Optional[bool] = None,
+    headless : Optional[bool] = None,
 ) -> Tuple[List[JobRecord], List[str]]:
     selected_sources = _normalize_sources(sources)
     combined: List[JobRecord] = []
     executed: List[str] = []
     seen_urls: Set[str] = set()
-
+    
+    # Prepara las tareas para cada fuente
+    tasks = []
     for source in selected_sources:
         entry = SCRAPER_REGISTRY.get(source)
         if not entry:
             logger.warning("Fuente desconocida '%s', se omite.", source)
             continue
-
         factory, collector, needs_cleanup = entry
         scraper = factory(headless=headless)
+        tasks.append((source, scraper, collector, needs_cleanup))
+        
+    def run_task(source, scraper, collector, needs_cleanup):
         logger.info("Iniciando scraper '%s'", source)
         start_time = time.perf_counter()
         results: List[JobRecord] = []
@@ -209,26 +214,32 @@ def collect_jobs(
                 logger.exception("Error cerrando scraper '%s'", source)
             if needs_cleanup:
                 _cleanup_driver(scraper, source)
-
         elapsed = time.perf_counter() - start_time
         logger.info("Scraper '%s' finalizado en %.2fs con %d ofertas", source, elapsed, len(results))
-
-        if not results:
-            logger.info("Scraper '%s' no produjo resultados.", source)
-            continue
-
-        executed.append(source)
-        for job in results:
-            url = job.get("url")
-            if not url:
-                logger.debug("Registro sin URL descartado de '%s'", source)
+        return source, results
+    
+    # Ejecuta en paralelo
+    with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+        future_to_source = {
+            executor.submit(run_task, source, scraper, collector, needs_cleanup): source
+            for source, scraper, collector, needs_cleanup in tasks
+        }
+        for future in as_completed(future_to_source):
+            source, results = future.result()
+            if not results:
+                logger.info("Scraper '%s' no produjo resultados.", source)
                 continue
-            if url in seen_urls:
-                logger.debug("URL duplicada '%s' descartada (fuente '%s')", url, source)
-                continue
-            seen_urls.add(url)
-            combined.append(job)
-
+            executed.append(source)
+            for job in results:
+                url = job.get("url")
+                if not url:
+                    logger.debug("Oferta sin URL descartado de '%s'", source)
+                    continue
+                if url in seen_urls:
+                    logger.debug("Oferta duplicada descartada: %s", url)
+                    continue
+                seen_urls.add(url)
+                combined.append(job)
+                
     logger.info("Total ofertas combinadas tras deduplicación: %d", len(combined))
-
     return combined, executed

@@ -2,16 +2,14 @@ import sys
 from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
+from tests.selenium_stub import ensure_selenium_stub
+from src import pipeline
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.selenium_stub import ensure_selenium_stub
-
 ensure_selenium_stub()
-
-from src import pipeline
 
 
 class PipelineTests(unittest.TestCase):
@@ -62,14 +60,29 @@ class PipelineTests(unittest.TestCase):
 
         mock_save.assert_called_once()
         saved_records = mock_save.call_args.args[0]
-        expected = [
-            {"fuente": "Bumeran", "url": "https://jobs.com/a", "titulo": "Role A", "empresa": "A"},
-            {"fuente": "Bumeran", "url": "https://jobs.com/b", "titulo": "Role B", "empresa": "B"},
-            {"fuente": "Computrabajo", "url": "https://jobs.com/c", "titulo": "Role C", "empresa": "C"},
-            {"fuente": "Indeed", "url": "https://jobs.com/d", "titulo": "Role D", "empresa": "D"},
-        ]
-        self.assertEqual(saved_records, expected)
-        self.assertEqual(result, expected)
+        # Validar que los registros correctos están presentes, sin importar la fuente de la URL duplicada
+        urls_fuentes = {r["url"]: r["fuente"] for r in saved_records}
+        # Siempre deben estar estas URLs
+        self.assertIn("https://jobs.com/a", urls_fuentes)
+        self.assertIn("https://jobs.com/b", urls_fuentes)
+        self.assertIn("https://jobs.com/c", urls_fuentes)
+        self.assertIn("https://jobs.com/d", urls_fuentes)
+        # La fuente de 'a' y 'b' debe ser Bumeran
+        self.assertEqual(urls_fuentes["https://jobs.com/a"], "Bumeran")
+        self.assertEqual(urls_fuentes["https://jobs.com/b"], "Bumeran")
+        # La fuente de 'd' debe ser Indeed
+        self.assertEqual(urls_fuentes["https://jobs.com/d"], "Indeed")
+        # La fuente de 'c' puede ser Computrabajo o Indeed (depende del orden de ejecución paralela)
+        self.assertIn(urls_fuentes["https://jobs.com/c"], ["Computrabajo", "Indeed"])
+        # Verifica que los datos de cada registro sean correctos
+        def get_by_url(records, url):
+            return next(r for r in records if r["url"] == url)
+        self.assertEqual(get_by_url(saved_records, "https://jobs.com/a")['titulo'], "Role A")
+        self.assertEqual(get_by_url(saved_records, "https://jobs.com/b")['titulo'], "Role B")
+        self.assertEqual(get_by_url(saved_records, "https://jobs.com/c")['titulo'], "Role C")
+        self.assertEqual(get_by_url(saved_records, "https://jobs.com/d")['titulo'], "Role D")
+        # El resultado devuelto debe ser igual al guardado
+        self.assertEqual(sorted(result, key=lambda x: x["url"]), sorted(saved_records, key=lambda x: x["url"]))
 
     def test_run_combined_filters_sources(self) -> None:
         indeed_instance = Mock()
@@ -106,8 +119,8 @@ class PipelineTests(unittest.TestCase):
                 "empresa": "OnlyCorp",
             }
         ]
-        self.assertEqual(saved_records, expected)
-        self.assertEqual(result, expected)
+        self.assertEqual(sorted(saved_records, key=lambda x: x["url"]), sorted(expected, key=lambda x: x["url"]))
+        self.assertEqual(sorted(result, key=lambda x: x["url"]), sorted(expected, key=lambda x: x["url"]))
 
     def test_collect_jobs_logs_duration_and_totals(self) -> None:
         fake_scraper = Mock()
